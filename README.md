@@ -1,5 +1,10 @@
 # WIFI扫描与破解工具 v1.0
 
+
+
+![这是图片](https://raw.githubusercontent.com/test502git/wificrack/refs/heads/main/AE915E6E-D3B5-4e5a-A849-F796F2EEAC09.png "Magic Gardens")
+
+
 ## 🚀 功能介绍
 
 ### 📡 WIFI扫描
