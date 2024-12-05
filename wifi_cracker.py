@@ -87,6 +87,10 @@ class WifiCracker:
         list_frame = ttk.Frame(wifi_frame)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
+        # 创建样式
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=25)  # 增加行高以适应复选框
+        
         self.tree = ttk.Treeview(list_frame, columns=("check", "ssid", "bssid", "signal", "encryption"), show="headings")
         
         # Configure column headings with sort functionality
@@ -101,6 +105,9 @@ class WifiCracker:
         self.tree.column("bssid", width=150)
         self.tree.column("signal", width=100)
         self.tree.column("encryption", width=150)
+        
+        # 创建复选框变量字典
+        self.checkbuttons = {}
         
         self.tree.bind('<Button-1>', self.handle_click)
         
@@ -141,6 +148,11 @@ class WifiCracker:
         self.dict_text = scrolledtext.ScrolledText(dict_frame, width=30)
         self.dict_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
+        # 创建默认字典并加载
+        if not os.path.exists("password.txt"):
+            self.create_default_dictionary()
+        self.load_dictionary()
+        
         save_dict_btn = ttk.Button(dict_frame, text="保存密码字典", command=self.save_dictionary)
         save_dict_btn.pack(padx=5, pady=(0, 5))
 
@@ -175,9 +187,6 @@ class WifiCracker:
         self.log_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         success_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Load initial dictionary content
-        self.load_dictionary()
-        
     def get_encryption_type(self, akm):
         if not akm:
             return "Open"
@@ -197,33 +206,41 @@ class WifiCracker:
         return min(max(signal_percent, 0), 100)  
 
     def handle_click(self, event):
-        region = self.tree.identify_region(event.x, event.y)
+        region = self.tree.identify("region", event.x, event.y)
+        
         if region == "cell":
             column = self.tree.identify_column(event.x)
             item = self.tree.identify_row(event.y)
-            if column == "#1" and item:  
+            if column == "#1" and item:
                 values = list(self.tree.item(item, "values"))
-                ssid = values[1]  
+                ssid = values[1]
                 
-                if values[0] == "✓":  
-                    values[0] = " "    
-                    self.selected_wifis.remove(ssid)
-                else:                  
-                    values[0] = "✓"    
-                    self.selected_wifis.add(ssid)
+                # 切换复选框状态
+                if ssid in self.checkbuttons:
+                    current_state = self.checkbuttons[ssid].get()
+                    new_state = not current_state
+                    self.checkbuttons[ssid].set(new_state)
                     
-                self.tree.item(item, values=values)
-                return "break"  
+                    if new_state:
+                        self.selected_wifis.add(ssid)
+                        values[0] = "☑"
+                    else:
+                        self.selected_wifis.remove(ssid)
+                        values[0] = "☐"
+                        
+                    self.tree.item(item, values=values)
+                return "break"
 
     def scan_wifi(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.wifi_list.clear()
         self.selected_wifis.clear()
+        self.checkbuttons.clear()  # 清除复选框变量
         
         print("开始扫描WiFi...")
         self.iface.scan()
-        time.sleep(2)  
+        time.sleep(2)
         
         results = self.iface.scan_results()
         if not results:
@@ -244,26 +261,22 @@ class WifiCracker:
             self.wifi_list.append(result)
             signal_strength = self.calculate_signal_strength(result.signal)
             encryption = self.get_encryption_type(result.akm)
+            
+            # 为每个WiFi创建一个复选框变量
+            var = tk.BooleanVar()
+            self.checkbuttons[result.ssid] = var
+            
             # Handle BSSID formatting
             try:
                 if isinstance(result.bssid, bytes):
                     bssid = ":".join([f"{b:02x}" for b in result.bssid]).upper()
                 else:
-                    bssid = str(result.bssid)
-            except:
-                bssid = "Unknown"
-            
-            print(f"SSID: {result.ssid} | BSSID: {bssid} | 信号强度: {signal_strength}% | 加密方式: {encryption}")
-            
-            self.tree.insert("", tk.END, values=(
-                " ",  
-                result.ssid,
-                bssid,
-                f"{signal_strength}%",
-                encryption
-            ))
-        
-        print("WiFi扫描完成")
+                    bssid = result.bssid
+                    
+                self.tree.insert("", "end", values=("☐", result.ssid, bssid, f"{signal_strength}%", encryption))
+                print(f"SSID: {result.ssid}, 信号强度: {signal_strength}%, 加密方式: {encryption}")
+            except Exception as e:
+                print(f"处理WiFi信息时出错: {str(e)}")
 
     def try_connect(self, ssid, password):
         profile = pywifi.Profile()
@@ -292,6 +305,7 @@ class WifiCracker:
                 content = f.read()
                 self.dict_text.delete('1.0', tk.END)
                 self.dict_text.insert('1.0', content)
+                self.dict_text.edit_modified(False)  # 重置修改状态
         except FileNotFoundError:
             self.create_default_dictionary()
             self.load_dictionary()
@@ -305,6 +319,7 @@ class WifiCracker:
             
         self.dict_text.delete('1.0', tk.END)
         self.dict_text.insert('1.0', '\n'.join(unique_passwords))
+        self.dict_text.edit_modified(False)  # 重置修改状态
         
         if show_message:
             messagebox.showinfo("成功", "密码字典已保存！")
